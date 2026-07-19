@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Capture-and-verify tool for the canonical Holacracy Constitution corpus.
+
+This is a DEV-TIME tool. It is never invoked at runtime — consumers read the
+generated `references/manifest.md` and `references/units/*` directly (see
+`skills/constitution/SKILL.md`). Its single job is to regenerate that corpus
+from the pinned upstream source and prove, byte-for-byte, that the split is
+faithful before writing anything.
+
+Standard library only — no third-party dependencies.
+
+--------------------------------------------------------------------------------
+Pinned source identity (Constitution 5.0)
+--------------------------------------------------------------------------------
+The three pinned facts below are the SINGLE source of truth for what this script
+captures by default. `tasks.md` and any re-capture caller override them via the
+`--commit`, `--version`, and `--source-url` flags; nothing else configures them.
+
+Evidence that PINNED_COMMIT is Constitution version 5.0 (recorded so the claim
+stays auditable — resolves the spec's one [ASSUMED] item):
+
+  * The upstream repository holacracyone/Holacracy-Constitution carries a tag
+    `v5.0` that points directly (lightweight tag) at commit
+    0a93cbd5c10bfaf6eb440b12ca89dd9e1629a97a.
+  * That same tag backs the published GitHub release titled
+    "Holacracy Constitution v5.0" (published 2021-06-02).
+  * The file `Holacracy-Constitution.md` at that commit (52,195 bytes) is the
+    5.0 text: Preamble, Articles 1-5, Sections N.M, sub-sections N.M.K, and the
+    Creative Commons license attribution.
+
+Verification command (any maintainer can re-run it):
+
+    gh api repos/holacracyone/Holacracy-Constitution/git/refs/tags/v5.0
+
+--------------------------------------------------------------------------------
+"""
+
+import argparse
+import re
+import sys
+
+# --- Pinned defaults: the ONE place the three capture facts live -------------
+
+PINNED_COMMIT = "0a93cbd5c10bfaf6eb440b12ca89dd9e1629a97a"
+PINNED_VERSION = "5.0"
+# `{commit}` is substituted with the resolved --commit value at fetch time, so
+# the recorded source URL is always concrete and commit-pinned (the exact URL
+# the capture fetched), while the flag stays reusable across re-captures.
+PINNED_SOURCE_URL = (
+    "https://raw.githubusercontent.com/holacracyone/"
+    "Holacracy-Constitution/{commit}/Holacracy-Constitution.md"
+)
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="capture",
+        description=(
+            "Regenerate and byte-verify the Holacracy Constitution corpus. "
+            "Writes references/ only when a full round-trip reassembly matches "
+            "the fetched source exactly."
+        ),
+    )
+    parser.add_argument(
+        "--commit",
+        default=PINNED_COMMIT,
+        help="Commit SHA to fetch and verify against (default: pinned 5.0 SHA).",
+    )
+    parser.add_argument(
+        "--version",
+        default=PINNED_VERSION,
+        help="Version label stamped into the manifest and frontmatter.",
+    )
+    parser.add_argument(
+        "--source-url",
+        default=PINNED_SOURCE_URL,
+        help=(
+            "Raw-markdown source location. A '{commit}' placeholder is filled "
+            "with --commit to form the concrete fetch URL."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_source_url(source_url, commit):
+    """Substitute the commit into the URL template if a placeholder is present."""
+    if "{commit}" in source_url:
+        return source_url.format(commit=commit)
+    return source_url
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    if not _SHA_RE.match(args.commit):
+        print(
+            f"capture: --commit must be a 40-hex-character SHA, got {args.commit!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Capture flow is implemented in T002.
+    raise NotImplementedError("capture flow not yet implemented (T002)")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

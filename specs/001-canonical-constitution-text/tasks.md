@@ -21,7 +21,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
 
 ## Phase 1: Capture tooling and corpus [Shared]
 
-- [ ] **T001** [Shared] Pin source identity: confirm the capture commit is Constitution 5.0 and record the pinned facts
+- [x] **T001** [Shared] Pin source identity: confirm the capture commit is Constitution 5.0 and record the pinned facts — pinned facts + 5.0 evidence in capture script defaults; [ASSUMED] confirmed via v5.0 tag/release
   - **Scope**: Identify the upstream commit SHA of the holacracyone Constitution markdown that corresponds to version 5.0; verify the correspondence (release tag or holacracy.org cross-check); record SHA, version label `5.0`, and source URL as the capture script's built-in defaults.
   - **Acceptance criteria**:
     - The chosen commit SHA is documented with the evidence tying it to the 5.0 release
