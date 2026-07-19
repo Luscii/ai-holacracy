@@ -29,7 +29,8 @@ skills/constitution/
                                  sub-sections and lettered clauses
       license.md               — verbatim Creative Commons attribution
   scripts/
-    capture.(sh|py)            — dev-time capture-and-verify tool (never invoked at runtime)
+    capture                    — dev-time capture-and-verify tool (Builder's choice of
+                                 extension; never invoked at runtime)
 ```
 
 **Capture flow (dev-time)**: capture script fetches the raw markdown at the pinned commit →

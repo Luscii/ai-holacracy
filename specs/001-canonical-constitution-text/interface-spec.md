@@ -72,7 +72,7 @@ skills/constitution/scripts/capture [--commit <sha>] [--version <label>] [--sour
 | `--version` | no | `5.0` | Version label stamped into manifest and frontmatter |
 | `--source-url` | no | pinned upstream URL | Raw-markdown source location |
 
-Defaults are the pinned facts; flags exist for re-capture verification. Flag names are contract-shape — the Builder may rename compatibly (same three inputs, same optionality).
+Defaults are the pinned inputs; flags exist for re-capture verification. The three flag names (`--commit`, `--version`, `--source-url`) are part of the interface contract — `tasks.md` and any re-capture caller refer to them by name.
 
 ### SKILL.md — required sections
 
@@ -82,7 +82,7 @@ Defaults are the pinned facts; flags exist for re-capture verification. Flag nam
 | Lookup Procedure | Manifest-first: read manifest → find covering row → read unit file → locate unit in body |
 | Parallel Read Pattern | Article retrieval = `article-N.md` + all `N.*.md`, readable concurrently |
 | Not-Found Rule | The two-step deterministic rule (see Error Communication), stated as a consumer obligation |
-| Regeneration | Points to `scripts/capture`; states the regeneration-only rule (no hand-edits, ever) |
+| Regeneration | Points to `skills/constitution/scripts/capture`; states the regeneration-only rule (no hand-edits, ever) |
 
 ---
 
