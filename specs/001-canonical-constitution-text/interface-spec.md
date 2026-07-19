@@ -63,7 +63,7 @@ Every unit file opens with a YAML frontmatter block of exactly these six fields,
 ### Capture script invocation
 
 ```
-scripts/capture [--commit <sha>] [--version <label>] [--source-url <url>]
+skills/constitution/scripts/capture [--commit <sha>] [--version <label>] [--source-url <url>]
 ```
 
 | Flag | Required | Default | Description |

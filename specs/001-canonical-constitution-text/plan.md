@@ -175,9 +175,10 @@ runs on every capture. Beyond it, a small fixed set of address-resolution checks
 clause, the Preamble, the license, a known-bad address) exercises the manifest → file → unit
 flow end to end. The scenarios skill will derive these from the spec's driving scenarios.
 
-**Configuration**: exactly two pinned facts — the upstream commit SHA and the version label
-`5.0` — recorded once in the manifest header and echoed into every unit's frontmatter by the
-capture script. Nothing else is configurable.
+**Configuration**: three pinned inputs — the upstream commit SHA, the version label `5.0`, and
+the source URL — serve as the capture script's defaults and are recorded in the manifest header
+(alongside the capture date). The version, commit, and source URL are echoed into every unit's
+frontmatter. Nothing else is configurable.
 
 ---
 
