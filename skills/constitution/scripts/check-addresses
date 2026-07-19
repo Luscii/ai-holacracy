@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""Dev-time address-resolution checks for the Constitution corpus.
+
+This is NOT the runtime retrieval path — consumers resolve addresses by following
+`SKILL.md` (manifest + naming convention), with no executable in the loop (ADR-2).
+This harness is the plan's "small fixed set of address-resolution checks": it
+mechanically walks the same manifest -> covering row -> unit file -> in-body
+location flow SKILL.md documents, and asserts the runtime contract holds against
+the real corpus. It exists to prove the corpus supports the documented behavior.
+
+It covers the ten `@wip` scenarios of
+`features/ungrounded-or-unresolvable-constitution.feature`. The two `@validation`
+scenarios (no-storage-leak metadata, whole-document round-trip) are deliberately
+NOT checked here — they are held out for independent verification (`/score:validate`).
+
+Exit 0 if every check passes; non-zero with a diagnostic otherwise.
+Standard library only.
+"""
+
+import importlib.util
+import re
+import sys
+from importlib.machinery import SourceFileLoader
+from pathlib import Path
+
+_SKILL_DIR = Path(__file__).resolve().parent.parent
+_REFERENCES = _SKILL_DIR / "references"
+_MANIFEST = _REFERENCES / "manifest.md"
+
+# The six address forms (Addressing Grammar in SKILL.md).
+_FORM_PREAMBLE = re.compile(r"^Preamble$")
+_FORM_LICENSE = re.compile(r"^License$")
+_FORM_ARTICLE = re.compile(r"^Article ([1-9]\d*)$")
+_FORM_SECTION = re.compile(r"^\d+\.\d+$")
+_FORM_SUBSECTION = re.compile(r"^(\d+\.\d+)\.\d+$")
+_FORM_CLAUSE = re.compile(r"^(\d+\.\d+)\.\d+\([a-z]\)$")
+
+
+class NotFound(Exception):
+    """A per-address not-found (no row, unit absent from body, or malformed)."""
+
+
+class CorpusUnavailable(Exception):
+    """The manifest is missing or malformed — no address can be resolved."""
+
+
+class Resolver:
+    """A minimal consumer that follows SKILL.md's Lookup Procedure exactly."""
+
+    def __init__(self, manifest_path=_MANIFEST, references_dir=_REFERENCES):
+        self.references_dir = references_dir
+        self.header, self.rows = self._load_manifest(manifest_path)
+
+    # -- manifest loading (SKILL.md: "read references/manifest.md first") ------
+
+    def _load_manifest(self, manifest_path):
+        if not manifest_path.exists():
+            raise CorpusUnavailable(f"manifest missing: {manifest_path}")
+        text = manifest_path.read_text(encoding="utf-8")
+        header = {}
+        for key in ("Version", "Source URL", "Source commit", "Captured"):
+            match = re.search(rf"^\| {re.escape(key)} \| (.*?) \|$", text, re.M)
+            if match:
+                header[key] = match.group(1).strip()
+        rows = {}
+        for line in text.splitlines():
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if len(cells) != 4 or cells[0] in ("Address prefix", "---", "Field"):
+                continue
+            if not cells[1].startswith("units/"):
+                continue
+            address, file_rel, heading, parent = cells
+            rows[address] = {"file": file_rel, "heading": heading, "parent": parent}
+        if not rows or "Version" not in header:
+            raise CorpusUnavailable("manifest malformed: no rows or missing header")
+        return header, rows
+
+    # -- unit reading ----------------------------------------------------------
+
+    def _read_unit(self, file_rel):
+        path = self.references_dir / file_rel
+        raw = path.read_text(encoding="utf-8")
+        lines = raw.split("\n")
+        close = lines.index("---", 1)
+        frontmatter = {}
+        for line in lines[1:close]:
+            key, _, value = line.partition(":")
+            frontmatter[key.strip()] = value.strip().strip('"')
+        body = "\n".join(lines[close + 1:])
+        return frontmatter, body
+
+    # -- resolution (SKILL.md: find covering row -> read file -> locate) --------
+
+    def resolve(self, address):
+        covering = self._covering_address(address)  # may raise NotFound
+        if covering not in self.rows:
+            raise NotFound(f"no manifest row covers {address!r}")
+
+        if _FORM_ARTICLE.match(address):
+            return self._resolve_article(address)
+
+        row = self.rows[covering]
+        frontmatter, body = self._read_unit(row["file"])
+
+        section_match = _FORM_SECTION.match(address)
+        sub_match = _FORM_SUBSECTION.match(address)
+        clause_match = _FORM_CLAUSE.match(address)
+
+        located = body
+        reported_address = address
+        if sub_match or clause_match:
+            subsection = address.split("(")[0]
+            located = self._locate_subsection(body, subsection, address)
+            if clause_match:
+                letter = address[address.index("(") + 1: address.index(")")]
+                located = self._locate_clause(located, letter, address)
+        elif not (section_match or _FORM_PREAMBLE.match(address)
+                  or _FORM_LICENSE.match(address)):
+            raise NotFound(f"malformed address {address!r}")
+
+        return {
+            "address": reported_address,
+            "metadata": frontmatter,
+            "covering_file": row["file"],
+            "text": located,
+        }
+
+    def _covering_address(self, address):
+        if (_FORM_PREAMBLE.match(address) or _FORM_LICENSE.match(address)
+                or _FORM_ARTICLE.match(address) or _FORM_SECTION.match(address)):
+            return address
+        sub = _FORM_SUBSECTION.match(address) or _FORM_CLAUSE.match(address)
+        if sub:
+            return sub.group(1)  # the N.M Section covers N.M.K and N.M.K(a)
+        raise NotFound(f"malformed address {address!r} (not one of the six forms)")
+
+    def _resolve_article(self, address):
+        number = _FORM_ARTICLE.match(address).group(1)
+        # Covering set: the article file + every Section N.* — in manifest order.
+        covering_set = [
+            row["file"]
+            for addr, row in self.rows.items()
+            if addr == address or re.match(rf"^{number}\.\d+$", addr)
+        ]
+        bodies = [self._read_unit(f)[1] for f in covering_set]
+        return {
+            "address": address,
+            "covering_set": covering_set,
+            "text": "".join(bodies),
+        }
+
+    def _locate_subsection(self, body, subsection, address):
+        pattern = re.compile(
+            rf"^#### {re.escape(subsection)}\b.*?(?=^#### |\Z)", re.M | re.S
+        )
+        match = pattern.search(body)
+        if not match:
+            raise NotFound(f"sub-section {subsection} absent from covering body")
+        return match.group(0)
+
+    def _locate_clause(self, subsection_text, letter, address):
+        pattern = re.compile(
+            rf"^- \*\*\({re.escape(letter)}\).*?(?=^- \*\*\(|\Z)", re.M | re.S
+        )
+        match = pattern.search(subsection_text)
+        if not match:
+            raise NotFound(f"clause ({letter}) absent from {address}")
+        return match.group(0)
+
+
+# --- checks (one per @wip scenario) ------------------------------------------
+
+_RESULTS = []
+
+
+def check(name):
+    def decorator(fn):
+        _RESULTS.append((name, fn))
+        return fn
+    return decorator
+
+
+def _load_capture():
+    loader = SourceFileLoader("capture", str(_SKILL_DIR / "scripts" / "capture"))
+    spec = importlib.util.spec_from_loader("capture", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+@check("Section address resolves to its exact text and metadata (1.1)")
+def _section():
+    r = Resolver()
+    result = r.resolve("1.1")
+    assert result["covering_file"] == "units/1.1.md", result["covering_file"]
+    meta = result["metadata"]
+    assert meta["heading"] == "Role Definition", meta
+    assert meta["parent"] == "Article 1: Organizational Structure", meta
+    assert meta["version"] == "5.0", meta
+    assert re.fullmatch(r"[0-9a-f]{40}", meta["source_commit"]), meta
+    assert result["text"].startswith("### 1.1 Role Definition"), result["text"][:40]
+
+
+@check("Lettered clause resolves inside its covering Section file (5.3.5(a))")
+def _clause():
+    r = Resolver()
+    result = r.resolve("5.3.5(a)")
+    assert result["covering_file"] == "units/5.3.md", result["covering_file"]
+    assert "(a) Describe Role" in result["text"], result["text"][:60]
+    # Metadata reports the full address with its parent Section and Article.
+    assert result["address"] == "5.3.5(a)"
+    assert result["metadata"]["parent"] == "Article 5: Governance Process"
+    assert result["metadata"]["heading"] == "Changing Governance"
+
+
+@check("Unknown address reports not-found, never invents (9.9)")
+def _unknown():
+    r = Resolver()
+    try:
+        r.resolve("9.9")
+    except NotFound:
+        return
+    raise AssertionError("9.9 should be not-found")
+
+
+@check("Malformed address is not best-guessed ('section one point one')")
+def _malformed():
+    r = Resolver()
+    try:
+        r.resolve("section one point one")
+    except NotFound:
+        return
+    raise AssertionError("malformed address should be not-found")
+
+
+@check("Missing manifest makes the corpus unavailable")
+def _corpus_unavailable():
+    try:
+        Resolver(manifest_path=_REFERENCES / "does-not-exist.md")
+    except CorpusUnavailable:
+        return
+    raise AssertionError("absent manifest should raise CorpusUnavailable")
+
+
+@check("Article retrieval assembles all nested units in order (Article 2)")
+def _article():
+    r = Resolver()
+    result = r.resolve("Article 2")
+    expected = ["units/article-2.md", "units/2.1.md", "units/2.2.md",
+                "units/2.3.md", "units/2.4.md"]
+    assert result["covering_set"] == expected, result["covering_set"]
+    text = result["text"]
+    assert text.startswith("## Article 2: Rules of Cooperation"), text[:50]
+    assert "### 2.4 Relational Agreements" in text
+    assert "## Article 3" not in text and "## Article 1" not in text
+
+
+@check("Preamble resolves despite carrying no numeric address")
+def _preamble():
+    r = Resolver()
+    result = r.resolve("Preamble")
+    assert result["covering_file"] == "units/preamble.md"
+    assert "## Preamble" in result["text"]
+    assert "The " in result["text"] and "Ratifiers" in result["text"]
+
+
+@check("License attribution is an addressable verbatim unit")
+def _license():
+    r = Resolver()
+    result = r.resolve("License")
+    assert result["covering_file"] == "units/license.md"
+    assert "Creative Commons Attribution-ShareAlike 4.0" in result["text"]
+
+
+@check("Sub-section text includes all its clauses in order (5.3.5)")
+def _subsection():
+    r = Resolver()
+    result = r.resolve("5.3.5")
+    text = result["text"]
+    letters = [m.group(1) for m in re.finditer(r"^- \*\*\(([a-f])\)", text, re.M)]
+    assert letters == ["a", "b", "c", "d", "e", "f"], letters
+
+
+@check("Failed round-trip verification aborts capture with no files written")
+def _capture_abort():
+    capture = _load_capture()
+    before = {p: p.read_bytes() for p in _REFERENCES.rglob("*") if p.is_file()}
+
+    original_fetch = capture.fetch_source
+    # Return content that will not round-trip: a valid-looking doc the split
+    # cannot reassemble byte-for-byte is hard to force, so tamper post-split by
+    # patching verify to reflect a real mismatch via corrupted source bytes.
+    capture.fetch_source = lambda url: (
+        "## Preamble\np\n## Article 1: X\n\n### 1.1 Y\nbody\n\n"
+        "---\n\nlicensed under CC\n\n---\n"
+    ).encode("utf-8")
+    # Sabotage the byte comparison by making decode != bytes is impossible for
+    # valid utf-8; instead sabotage reassembly by monkeypatching split to drop a
+    # slice, which is exactly the "reassembled split did not byte-match" case.
+    original_split = capture.split_units
+
+    def lossy_split(text):
+        units = original_split(text)
+        units[-1].body = units[-1].body[:-3]  # drop bytes -> reassembly shortfall
+        return units
+
+    capture.split_units = lossy_split
+    try:
+        code = capture.main([])
+    finally:
+        capture.fetch_source = original_fetch
+        capture.split_units = original_split
+
+    assert code != 0, "capture should exit non-zero on round-trip mismatch"
+    after = {p: p.read_bytes() for p in _REFERENCES.rglob("*") if p.is_file()}
+    assert after == before, "no files may change on a failed capture"
+
+
+def main():
+    failures = 0
+    for name, fn in _RESULTS:
+        try:
+            fn()
+            print(f"PASS  {name}")
+        except Exception as exc:  # noqa: BLE001 - report every failure
+            failures += 1
+            print(f"FAIL  {name}\n        {type(exc).__name__}: {exc}")
+    print(f"\n{len(_RESULTS) - failures}/{len(_RESULTS)} checks passed")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -72,7 +72,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Scenario references**: ungrounded-or-unresolvable-constitution.feature: "Scenario: Unknown address reports not-found", "Scenario: Malformed address reports not-found", "Scenario: Missing manifest makes the corpus unavailable"
   - **Interface references**: interface-spec.md: SKILL.md — required sections; Interactions (consumer flow); Error Communication (runtime not-found contract)
 
-- [ ] **T005** [Shared] Implement the fixed address-resolution checks
+- [x] **T005** [Shared] Implement the fixed address-resolution checks — 10 @wip scenarios satisfied via scripts/check-addresses (Section, clause, Article fan-out, Preamble, License, sub-section, unknown, malformed, corpus-unavailable, capture-abort); 2 @validation scenarios held out
   - **Scope**: Implement the end-to-end validation set from the plan's testing strategy — a Section (`1.1`), a clause (`5.3.5(a)`), an Article fan-out (`Article 2`), the Preamble, the License, a known-bad address (`9.9`), a malformed address, and the corpus-unavailable case — exercising the manifest → file → unit flow exactly as SKILL.md instructs, and satisfying the feature file's `@wip` scenarios.
   - **Acceptance criteria**:
     - Every check resolves (or correctly not-founds) per the interface's runtime contract
