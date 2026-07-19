@@ -60,7 +60,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
 
 ## Phase 2: Owner skill surface [Shared]
 
-- [ ] **T004** [Shared] Write the `constitution` owner skill (SKILL.md)
+- [x] **T004** [Shared] Write the `constitution` owner skill (SKILL.md) — 5 sections (Addressing Grammar, Lookup, Parallel Read, Not-Found, Regeneration); all 4 not-found conditions + metadata-boundary covered
   - **Scope**: Author `skills/constitution/SKILL.md` with the five required sections from the interface accord: Addressing Grammar (all six address forms), Lookup Procedure (manifest-first), Parallel Read Pattern (Articles), Not-Found Rule (two-step deterministic + corpus-unavailable degradation), Regeneration (pointer to the capture script, regeneration-only rule).
   - **Acceptance criteria**:
     - All five required sections present and matching interface-spec.md's structural requirements
