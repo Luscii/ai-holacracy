@@ -96,12 +96,12 @@ Defaults are the pinned facts; flags exist for re-capture verification. Flag nam
 5. Report the unit's text with its frontmatter metadata (plus the manifest header facts where the consumer needs capture provenance).
 
 **Maintainer flow (dev-time, write-only)**:
-1. Run `scripts/capture` (defaults = pinned facts).
+1. Run `skills/constitution/scripts/capture` (defaults = pinned facts).
 2. Script fetches the source at the commit, splits on the document's own heading structure, generates all unit files and the manifest in a staging step.
 3. Script reassembles all bodies in document order and byte-compares against the fetched source.
 4. Only on an exact match does the script write `references/` outputs. Re-running with unchanged inputs is idempotent — byte-identical outputs.
 
-**Configuration**: none at runtime. The two pinned facts (commit SHA, version label) plus the source URL live as capture-script defaults and are echoed into the manifest header and every unit's frontmatter. Nothing else is configurable.
+**Configuration**: none at runtime. Three pinned inputs — the commit SHA, the version label, and the source URL — are the capture-script defaults; they are recorded in the manifest header (alongside the capture date) and echoed into every unit's frontmatter. Nothing else is configurable.
 
 ---
 

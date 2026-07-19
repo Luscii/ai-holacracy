@@ -8,8 +8,8 @@
 
 ## Dependency Graph
 
-Phase 1: Capture tooling and corpus (3 tasks, no dependencies) [Shared]
-Phase 2: Owner skill surface (2 tasks, depends on Phase 1) [Shared]
+Phase 1: Capture tooling and corpus (3 tasks, no upstream phase dependency; T001→T002→T003 sequential) [Shared]
+Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequential) [Shared]
 
 5 tasks total | no parallel phases — a strict pipeline | Builder: single builder
 

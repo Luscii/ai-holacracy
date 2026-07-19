@@ -1,6 +1,6 @@
 # Decisions
 
-Architectural precedent from the specification pipeline. Each entry records a decision that future specs should follow or explicitly diverge from. Managed by the plan skill via memory-protocol.md.
+Architectural precedent from the specification pipeline. Each entry records a decision that future specs should follow or explicitly diverge from. Managed by the plan skill (Score pipeline).
 
 ---
 
