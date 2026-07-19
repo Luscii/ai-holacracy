@@ -46,7 +46,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Interface references**: interface-spec.md: Capture script invocation; Unit frontmatter contract; Manifest contract; Error Communication (capture-time contract)
   - **Risk**: ⚠️ Structural surprises — lead-in prose under Article headings or inconsistent clause formatting may complicate boundary detection
 
-- [ ] **T003** [Shared] Produce, review, and commit the captured corpus
+- [x] **T003** [Shared] Produce, review, and commit the captured corpus — 25 units (Preamble, Articles 1-5, Sections 1.1-5.5, License) + manifest; round-trip byte-exact (52195B); manifest reviewed against source structure, no anomalies
   - **Scope**: Run the capture script against the pinned commit; human-review the generated manifest against the published document's structure (the one-time first-capture review); commit the complete `references/` output set.
   - **Acceptance criteria**:
     - Capture exits 0 with the round-trip byte-comparison passing
