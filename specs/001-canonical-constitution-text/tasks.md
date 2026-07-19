@@ -32,7 +32,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Interface references**: interface-spec.md: Capture script invocation (flag defaults); Manifest contract (header block facts)
   - **Risk**: ⚠️ Version identity — master may have drifted past 5.0; wrong pin makes every citation claim wrong
 
-- [ ] **T002** [Shared] Build the capture-and-verify script
+- [x] **T002** [Shared] Build the capture-and-verify script — 2 scenarios (round-trip abort, byte-for-byte reassembly) verified; failure modes + idempotency tested
   - **Scope**: One standalone dev-time script (no third-party dependencies; language is Builder's choice) implementing the full capture flow: fetch raw markdown at the pinned commit, split at the document's own heading boundaries, emit unit files (YAML frontmatter with the six fields + byte-verbatim body), generate manifest.md (header facts + strict index table), reassemble bodies in document order and byte-compare against the fetched source, write outputs only on an exact match.
   - **Acceptance criteria**:
     - Supports the three override flags (`--commit`, `--version`, `--source-url`) with pinned defaults, per interface-spec.md
