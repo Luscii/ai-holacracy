@@ -8,10 +8,12 @@ mechanically walks the same manifest -> covering row -> unit file -> in-body
 location flow SKILL.md documents, and asserts the runtime contract holds against
 the real corpus. It exists to prove the corpus supports the documented behavior.
 
-It covers the ten `@wip` scenarios of
-`features/ungrounded-or-unresolvable-constitution.feature`. The two `@validation`
-scenarios (no-storage-leak metadata, whole-document round-trip) are deliberately
-NOT checked here — they are held out for independent verification (`/score:validate`).
+It covers the ten Builder-owned scenarios of
+`features/ungrounded-or-unresolvable-constitution.feature` (their `@wip` tags are
+removed here once each check proves green). The two `@validation` scenarios
+(no-storage-leak metadata, whole-document round-trip) are deliberately NOT checked
+here — they keep their `@wip` tag and are held out for independent verification
+(`/score:validate`).
 
 Exit 0 if every check passes; non-zero with a diagnostic otherwise.
 Standard library only.
@@ -57,10 +59,11 @@ class Resolver:
         if not manifest_path.exists():
             raise CorpusUnavailable(f"manifest missing: {manifest_path}")
         text = manifest_path.read_text(encoding="utf-8")
+        required_header = ("Version", "Source URL", "Source commit", "Captured")
         header = {}
-        for key in ("Version", "Source URL", "Source commit", "Captured"):
+        for key in required_header:
             match = re.search(rf"^\| {re.escape(key)} \| (.*?) \|$", text, re.M)
-            if match:
+            if match and match.group(1).strip():
                 header[key] = match.group(1).strip()
         rows = {}
         for line in text.splitlines():
@@ -71,8 +74,12 @@ class Resolver:
                 continue
             address, file_rel, heading, parent = cells
             rows[address] = {"file": file_rel, "heading": heading, "parent": parent}
-        if not rows or "Version" not in header:
-            raise CorpusUnavailable("manifest malformed: no rows or missing header")
+        missing = [key for key in required_header if key not in header]
+        if missing or not rows:
+            raise CorpusUnavailable(
+                "manifest malformed: "
+                + ("no unit rows" if not rows else f"missing header fields {missing}")
+            )
         return header, rows
 
     # -- unit reading ----------------------------------------------------------
