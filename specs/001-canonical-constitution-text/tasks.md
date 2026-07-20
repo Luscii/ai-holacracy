@@ -21,7 +21,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
 
 ## Phase 1: Capture tooling and corpus [Shared]
 
-- [ ] **T001** [Shared] Pin source identity: confirm the capture commit is Constitution 5.0 and record the pinned facts
+- [x] **T001** [Shared] Pin source identity: confirm the capture commit is Constitution 5.0 and record the pinned facts — pinned facts + 5.0 evidence in capture script defaults; [ASSUMED] confirmed via v5.0 tag/release
   - **Scope**: Identify the upstream commit SHA of the holacracyone Constitution markdown that corresponds to version 5.0; verify the correspondence (release tag or holacracy.org cross-check); record SHA, version label `5.0`, and source URL as the capture script's built-in defaults.
   - **Acceptance criteria**:
     - The chosen commit SHA is documented with the evidence tying it to the 5.0 release
@@ -32,7 +32,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Interface references**: interface-spec.md: Capture script invocation (flag defaults); Manifest contract (header block facts)
   - **Risk**: ⚠️ Version identity — master may have drifted past 5.0; wrong pin makes every citation claim wrong
 
-- [ ] **T002** [Shared] Build the capture-and-verify script
+- [x] **T002** [Shared] Build the capture-and-verify script — 2 scenarios (round-trip abort, byte-for-byte reassembly) verified; failure modes + idempotency tested
   - **Scope**: One standalone dev-time script (no third-party dependencies; language is Builder's choice) implementing the full capture flow: fetch raw markdown at the pinned commit, split at the document's own heading boundaries, emit unit files (YAML frontmatter with the six fields + byte-verbatim body), generate manifest.md (header facts + strict index table), reassemble bodies in document order and byte-compare against the fetched source, write outputs only on an exact match.
   - **Acceptance criteria**:
     - Supports the three override flags (`--commit`, `--version`, `--source-url`) with pinned defaults, per interface-spec.md
@@ -46,7 +46,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Interface references**: interface-spec.md: Capture script invocation; Unit frontmatter contract; Manifest contract; Error Communication (capture-time contract)
   - **Risk**: ⚠️ Structural surprises — lead-in prose under Article headings or inconsistent clause formatting may complicate boundary detection
 
-- [ ] **T003** [Shared] Produce, review, and commit the captured corpus
+- [x] **T003** [Shared] Produce, review, and commit the captured corpus — 25 units (Preamble, Articles 1-5, Sections 1.1-5.5, License) + manifest; round-trip byte-exact (52195B); manifest reviewed against source structure, no anomalies
   - **Scope**: Run the capture script against the pinned commit; human-review the generated manifest against the published document's structure (the one-time first-capture review); commit the complete `references/` output set.
   - **Acceptance criteria**:
     - Capture exits 0 with the round-trip byte-comparison passing
@@ -60,7 +60,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
 
 ## Phase 2: Owner skill surface [Shared]
 
-- [ ] **T004** [Shared] Write the `constitution` owner skill (SKILL.md)
+- [x] **T004** [Shared] Write the `constitution` owner skill (SKILL.md) — 5 sections (Addressing Grammar, Lookup, Parallel Read, Not-Found, Regeneration); all 4 not-found conditions + metadata-boundary covered
   - **Scope**: Author `skills/constitution/SKILL.md` with the five required sections from the interface accord: Addressing Grammar (all six address forms), Lookup Procedure (manifest-first), Parallel Read Pattern (Articles), Not-Found Rule (two-step deterministic + corpus-unavailable degradation), Regeneration (pointer to the capture script, regeneration-only rule).
   - **Acceptance criteria**:
     - All five required sections present and matching interface-spec.md's structural requirements
@@ -72,7 +72,7 @@ Phase 2: Owner skill surface (2 tasks, depends on Phase 1; T004→T005 sequentia
   - **Scenario references**: ungrounded-or-unresolvable-constitution.feature: "Scenario: Unknown address reports not-found", "Scenario: Malformed address reports not-found", "Scenario: Missing manifest makes the corpus unavailable"
   - **Interface references**: interface-spec.md: SKILL.md — required sections; Interactions (consumer flow); Error Communication (runtime not-found contract)
 
-- [ ] **T005** [Shared] Implement the fixed address-resolution checks
+- [x] **T005** [Shared] Implement the fixed address-resolution checks — 10 @wip scenarios satisfied via scripts/check-addresses (Section, clause, Article fan-out, Preamble, License, sub-section, unknown, malformed, corpus-unavailable, capture-abort); 2 @validation scenarios held out
   - **Scope**: Implement the end-to-end validation set from the plan's testing strategy — a Section (`1.1`), a clause (`5.3.5(a)`), an Article fan-out (`Article 2`), the Preamble, the License, a known-bad address (`9.9`), a malformed address, and the corpus-unavailable case — exercising the manifest → file → unit flow exactly as SKILL.md instructs, and satisfying the feature file's `@wip` scenarios.
   - **Acceptance criteria**:
     - Every check resolves (or correctly not-founds) per the interface's runtime contract

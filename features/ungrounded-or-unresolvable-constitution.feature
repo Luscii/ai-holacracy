@@ -11,7 +11,6 @@ Feature: Canonical Constitution text
     # I want to retrieve the exact text a given address names.
 
     # Source: 001-canonical-constitution-text — Scenario: Retrieve a Section by address
-    @wip
     Scenario: Section address resolves to its exact text and metadata
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "1.1" through the manifest
@@ -20,7 +19,6 @@ Feature: Canonical Constitution text
       And the frontmatter will report version "5.0" and the pinned source commit
 
     # Source: 001-canonical-constitution-text — Scenario: Retrieve a rule-grain clause
-    @wip
     Scenario: Lettered clause resolves inside its covering Section file
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "5.3.5(a)"
@@ -29,7 +27,6 @@ Feature: Canonical Constitution text
       And the metadata will report the full address with its parent Section and Article
 
     # Source: 001-canonical-constitution-text — Scenario: Unknown address returns nothing, never invents
-    @wip
     Scenario: Unknown address reports not-found
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "9.9"
@@ -38,7 +35,6 @@ Feature: Canonical Constitution text
       And no approximate or nearest-match text will be returned
 
     # Source: 001-canonical-constitution-text — Scenario: Malformed address is not best-guessed
-    @wip
     Scenario: Malformed address reports not-found
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves the address "section one point one"
@@ -46,7 +42,6 @@ Feature: Canonical Constitution text
       And the consumer will report the address as unresolvable rather than best-guessing
 
     # Source: 001-canonical-constitution-text — Proposed: Corpus-unavailable degradation from the interface error contract
-    @wip
     Scenario: Missing manifest makes the corpus unavailable
       Given the manifest file was absent or malformed
       When the consumer attempts to resolve address "1.1"
@@ -68,7 +63,6 @@ Feature: Canonical Constitution text
     # I want to fetch a single Section in isolation.
 
     # Source: 001-canonical-constitution-text — Scenario: Retrieve an Article, including its nested units
-    @wip
     Scenario: Article retrieval assembles all nested units in order
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "Article 2"
@@ -82,7 +76,6 @@ Feature: Canonical Constitution text
     # I want every retrieved passage to be byte-exact to the published Constitution.
 
     # Source: 001-canonical-constitution-text — Scenario: Retrieve the unnumbered Preamble
-    @wip
     Scenario: Preamble resolves despite carrying no numeric address
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "Preamble"
@@ -90,7 +83,6 @@ Feature: Canonical Constitution text
       And its body will contain the exact published Preamble text
 
     # Source: 001-canonical-constitution-text — Scenario: Retrieve the license attribution
-    @wip
     Scenario: License attribution is an addressable verbatim unit
       Given the Constitution 5.0 corpus had been captured
       When the consumer resolves address "License"
@@ -98,7 +90,6 @@ Feature: Canonical Constitution text
       And its body will contain the Creative Commons attribution verbatim
 
     # Source: 001-canonical-constitution-text — Scenario: Sub-section retrieval includes its lettered clauses
-    @wip
     Scenario: Sub-section text includes all its clauses in order
       Given the Constitution 5.0 corpus had been captured
       And sub-section 5.3.5 contained lettered clauses
@@ -106,7 +97,6 @@ Feature: Canonical Constitution text
       Then the returned text will include every clause of 5.3.5 in document order
 
     # Source: 001-canonical-constitution-text — Proposed: Capture abort contract from the plan capture flow
-    @wip
     Scenario: Failed round-trip verification aborts capture with no files written
       Given the capture script had fetched the source at the pinned commit
       And the reassembled split did not byte-match the fetched source

@@ -1,0 +1,425 @@
+#!/usr/bin/env python3
+"""Capture-and-verify tool for the canonical Holacracy Constitution corpus.
+
+This is a DEV-TIME tool. It is never invoked at runtime — consumers read the
+generated `references/manifest.md` and `references/units/*` directly (see
+`skills/constitution/SKILL.md`). Its single job is to regenerate that corpus
+from the pinned upstream source and prove, byte-for-byte, that the split is
+faithful before writing anything.
+
+Standard library only — no third-party dependencies.
+
+Flow: fetch raw markdown at the pinned commit -> split at the document's own
+heading boundaries -> build unit files (YAML frontmatter + byte-verbatim body)
+and the manifest in memory -> reassemble all bodies in document order and
+byte-compare against the fetched source -> write `references/` only on an exact
+match. Any anomaly (fetch failure, split ambiguity, round-trip mismatch) aborts
+with a non-zero exit and a stderr diagnostic, writing zero files.
+
+--------------------------------------------------------------------------------
+Pinned source identity (Constitution 5.0)
+--------------------------------------------------------------------------------
+The three pinned facts below are the SINGLE source of truth for what this script
+captures by default. `tasks.md` and any re-capture caller override them via the
+`--commit`, `--version`, and `--source-url` flags; nothing else configures them.
+
+Evidence that PINNED_COMMIT is Constitution version 5.0 (recorded so the claim
+stays auditable — resolves the spec's one [ASSUMED] item):
+
+  * The upstream repository holacracyone/Holacracy-Constitution carries a tag
+    `v5.0` that points directly (lightweight tag) at commit
+    0a93cbd5c10bfaf6eb440b12ca89dd9e1629a97a.
+  * That same tag backs the published GitHub release titled
+    "Holacracy Constitution v5.0" (published 2021-06-02).
+  * The file `Holacracy-Constitution.md` at that commit (52,195 bytes) is the
+    5.0 text: Preamble, Articles 1-5, Sections N.M, sub-sections N.M.K, and the
+    Creative Commons license attribution.
+
+Verification command (any maintainer can re-run it):
+
+    gh api repos/holacracyone/Holacracy-Constitution/git/refs/tags/v5.0
+
+--------------------------------------------------------------------------------
+"""
+
+import argparse
+import datetime
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+# --- Pinned defaults: the ONE place the three capture facts live -------------
+
+PINNED_COMMIT = "0a93cbd5c10bfaf6eb440b12ca89dd9e1629a97a"
+PINNED_VERSION = "5.0"
+# `{commit}` is substituted with the resolved --commit value at fetch time, so
+# the recorded source URL is always concrete and commit-pinned (the exact URL
+# the capture fetched), while the flag stays reusable across re-captures.
+PINNED_SOURCE_URL = (
+    "https://raw.githubusercontent.com/holacracyone/"
+    "Holacracy-Constitution/{commit}/Holacracy-Constitution.md"
+)
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+# Heading grammar of the source document.
+_PREAMBLE_RE = re.compile(r"^## Preamble\s*$")
+_ARTICLE_RE = re.compile(r"^## (Article (\d+):.*?)\s*$")
+_SECTION_RE = re.compile(r"^### (\d+\.\d+)\s+(.*?)\s*$")
+# The trailing Creative Commons attribution has no heading; locate it by content.
+_LICENSE_MARK_RE = re.compile(r"creativecommons\.org/licenses|licensed under", re.I)
+_THEMATIC_BREAK = "---"
+
+# Output locations, relative to this script (skills/constitution/scripts/capture).
+_REFERENCES_DIR = Path(__file__).resolve().parent.parent / "references"
+_UNITS_DIR = _REFERENCES_DIR / "units"
+_MANIFEST_PATH = _REFERENCES_DIR / "manifest.md"
+
+_CAPTURED_LINE_RE = re.compile(r"^\| Captured \|.*$", re.M)
+
+
+class CaptureError(Exception):
+    """Raised for any anomaly that must abort the capture with zero writes."""
+
+
+# --- Argument handling -------------------------------------------------------
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="capture",
+        description=(
+            "Regenerate and byte-verify the Holacracy Constitution corpus. "
+            "Writes references/ only when a full round-trip reassembly matches "
+            "the fetched source exactly."
+        ),
+    )
+    parser.add_argument(
+        "--commit",
+        default=PINNED_COMMIT,
+        help="Commit SHA to fetch and verify against (default: pinned 5.0 SHA).",
+    )
+    parser.add_argument(
+        "--version",
+        default=PINNED_VERSION,
+        help="Version label stamped into the manifest and frontmatter.",
+    )
+    parser.add_argument(
+        "--source-url",
+        default=PINNED_SOURCE_URL,
+        help=(
+            "Raw-markdown source location. A '{commit}' placeholder is filled "
+            "with --commit to form the concrete fetch URL."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def resolve_source_url(source_url, commit):
+    """Substitute the commit into the URL template if a placeholder is present."""
+    if "{commit}" in source_url:
+        return source_url.format(commit=commit)
+    return source_url
+
+
+# --- Fetch -------------------------------------------------------------------
+
+
+def fetch_source(url):
+    """Fetch raw bytes from `url`, or raise CaptureError on any failure."""
+    request = urllib.request.Request(url, headers={"User-Agent": "constitution-capture"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read()
+    except (urllib.error.URLError, OSError) as exc:
+        raise CaptureError(f"fetch failed for {url}: {exc}") from exc
+
+
+# --- Split -------------------------------------------------------------------
+
+
+class Unit:
+    __slots__ = ("address", "heading", "parent", "filename", "start", "body")
+
+    def __init__(self, address, heading, parent, filename, start):
+        self.address = address
+        self.heading = heading
+        self.parent = parent
+        self.filename = filename
+        self.start = start  # 0-based start line index
+        self.body = None
+
+
+def split_units(text):
+    """Partition `text` into ordered Units at the document's own boundaries.
+
+    Boundaries: `## Preamble`, `## Article N`, `### N.M`, and the trailing
+    license block. The Preamble unit absorbs everything before Article 1
+    (including the document title) so the partition covers byte 0. `#### N.M.K`
+    sub-sections are deliberately NOT boundaries — they live inside their
+    covering Section file.
+    """
+    lines = text.splitlines(keepends=True)
+    units = []
+    current_article_heading = ""
+    seen_preamble = False
+    article_numbers = []
+
+    for index, line in enumerate(lines):
+        if _PREAMBLE_RE.match(line):
+            # Preamble starts at byte 0 to capture the document title/lead-in.
+            units.append(Unit("Preamble", "Preamble", "", "preamble.md", 0))
+            seen_preamble = True
+            continue
+
+        article_match = _ARTICLE_RE.match(line)
+        if article_match:
+            heading = article_match.group(1)
+            number = article_match.group(2)
+            current_article_heading = heading
+            article_numbers.append(int(number))
+            units.append(
+                Unit(f"Article {number}", heading, "", f"article-{number}.md", index)
+            )
+            continue
+
+        section_match = _SECTION_RE.match(line)
+        if section_match:
+            address = section_match.group(1)
+            heading = section_match.group(2)
+            units.append(
+                Unit(address, heading, current_article_heading, f"{address}.md", index)
+            )
+            continue
+
+    # Locate the license block: the thematic break preceding the CC attribution.
+    license_start = _find_license_start(lines)
+    units.append(Unit("License", "License", "", "license.md", license_start))
+
+    _validate_structure(units, seen_preamble, article_numbers, len(lines))
+
+    # Order by start line, then slice contiguously so the partition is gapless.
+    units.sort(key=lambda unit: unit.start)
+    for position, unit in enumerate(units):
+        end = units[position + 1].start if position + 1 < len(units) else len(lines)
+        unit.body = "".join(lines[unit.start:end])
+
+    return units
+
+
+def _find_license_start(lines):
+    mark_index = next(
+        (i for i, line in enumerate(lines) if _LICENSE_MARK_RE.search(line)), None
+    )
+    if mark_index is None:
+        raise CaptureError("split ambiguity: license attribution not found")
+    for i in range(mark_index, -1, -1):
+        if lines[i].rstrip("\n") == _THEMATIC_BREAK:
+            return i
+    raise CaptureError(
+        "split ambiguity: no thematic break precedes the license attribution"
+    )
+
+
+def _validate_structure(units, seen_preamble, article_numbers, line_count):
+    if not seen_preamble:
+        raise CaptureError("split ambiguity: no `## Preamble` heading found")
+    if not article_numbers:
+        raise CaptureError("split ambiguity: no `## Article N` headings found")
+    expected = list(range(1, max(article_numbers) + 1))
+    if sorted(article_numbers) != expected:
+        raise CaptureError(
+            f"split ambiguity: article numbers {sorted(article_numbers)} "
+            f"are not the contiguous sequence {expected}"
+        )
+    section_addresses = [
+        unit.address for unit in units if re.fullmatch(r"\d+\.\d+", unit.address)
+    ]
+    if not section_addresses:
+        raise CaptureError("split ambiguity: no `### N.M` section headings found")
+    for address in section_addresses:
+        article_number = int(address.split(".")[0])
+        if article_number not in article_numbers:
+            raise CaptureError(
+                f"split ambiguity: section {address} has no matching "
+                f"`## Article {article_number}` heading"
+            )
+    starts = sorted(unit.start for unit in units)
+    if len(set(starts)) != len(starts):
+        raise CaptureError("split ambiguity: two units share a start boundary")
+    if starts[0] != 0:
+        raise CaptureError("split ambiguity: partition does not start at byte 0")
+    if any(start >= line_count for start in starts):
+        raise CaptureError("split ambiguity: a unit starts past end of document")
+
+
+# --- Emit --------------------------------------------------------------------
+
+
+def _yaml_quote(value):
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render_unit_file(unit, version, commit, source_url):
+    """Frontmatter block (exactly six fields) followed by the verbatim body."""
+    frontmatter = (
+        "---\n"
+        f"address: {_yaml_quote(unit.address)}\n"
+        f"heading: {_yaml_quote(unit.heading)}\n"
+        f"parent: {_yaml_quote(unit.parent)}\n"
+        f"version: {_yaml_quote(version)}\n"
+        f"source_commit: {_yaml_quote(commit)}\n"
+        f"source_url: {_yaml_quote(source_url)}\n"
+        "---\n"
+    )
+    return frontmatter + unit.body
+
+
+def _table_cell(value):
+    return value.replace("|", "\\|")
+
+
+def render_manifest(units, version, commit, source_url, captured):
+    header = (
+        "# Constitution Corpus Manifest\n"
+        "\n"
+        "Generated by `scripts/capture` — never hand-edited. Re-run the capture "
+        "script to regenerate.\n"
+        "\n"
+        "| Field | Value |\n"
+        "|---|---|\n"
+        f"| Version | {_table_cell(version)} |\n"
+        f"| Source URL | {_table_cell(source_url)} |\n"
+        f"| Source commit | {_table_cell(commit)} |\n"
+        f"| Captured | {captured} |\n"
+        "\n"
+    )
+    rows = [
+        "| Address prefix | File | Heading | Parent |",
+        "|---|---|---|---|",
+    ]
+    for unit in units:
+        rows.append(
+            f"| {_table_cell(unit.address)} | units/{_table_cell(unit.filename)} "
+            f"| {_table_cell(unit.heading)} | {_table_cell(unit.parent)} |"
+        )
+    return header + "\n".join(rows) + "\n"
+
+
+# --- Round-trip verification -------------------------------------------------
+
+
+def verify_round_trip(units, source_bytes, source_text):
+    """Reassemble bodies in document order and byte-compare against the source."""
+    reassembled = "".join(unit.body for unit in units)
+    if reassembled != source_text:
+        raise CaptureError(
+            "round-trip mismatch: reassembled text differs from fetched source"
+        )
+    if reassembled.encode("utf-8") != source_bytes:
+        raise CaptureError(
+            "round-trip mismatch: reassembled bytes differ from fetched source"
+        )
+
+
+# --- Write (idempotent) ------------------------------------------------------
+
+
+def _manifest_matches_ignoring_date(existing, candidate):
+    strip = lambda text: _CAPTURED_LINE_RE.sub("| Captured | * |", text)
+    return strip(existing) == strip(candidate)
+
+
+def write_outputs(units, unit_files, manifest_text):
+    """Write the corpus. No-op (idempotent) when disk already matches.
+
+    Returns True if any file was written, False if the on-disk corpus was
+    already equivalent (unit bodies identical and manifest identical apart from
+    the capture date, which is preserved).
+    """
+    manifest_bytes = manifest_text.encode("utf-8")
+
+    unchanged = _MANIFEST_PATH.exists()
+    if unchanged:
+        existing_manifest = _MANIFEST_PATH.read_text(encoding="utf-8")
+        unchanged = _manifest_matches_ignoring_date(existing_manifest, manifest_text)
+    if unchanged:
+        existing_units = {p.name for p in _UNITS_DIR.glob("*.md")}
+        if existing_units != set(unit_files):
+            unchanged = False
+    if unchanged:
+        for filename, content in unit_files.items():
+            path = _UNITS_DIR / filename
+            if not path.exists() or path.read_bytes() != content.encode("utf-8"):
+                unchanged = False
+                break
+    if unchanged:
+        return False
+
+    _UNITS_DIR.mkdir(parents=True, exist_ok=True)
+    # Regeneration-only: clear stale unit files from any prior capture.
+    for stale in _UNITS_DIR.glob("*.md"):
+        if stale.name not in unit_files:
+            stale.unlink()
+    for filename, content in unit_files.items():
+        (_UNITS_DIR / filename).write_text(content, encoding="utf-8", newline="")
+    _MANIFEST_PATH.write_bytes(manifest_bytes)
+    return True
+
+
+# --- Orchestration -----------------------------------------------------------
+
+
+def capture(commit, version, source_url_template, captured):
+    source_url = resolve_source_url(source_url_template, commit)
+    source_bytes = fetch_source(source_url)
+    try:
+        source_text = source_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise CaptureError(f"source is not valid UTF-8: {exc}") from exc
+    if source_text.encode("utf-8") != source_bytes:
+        raise CaptureError("source does not round-trip through UTF-8 cleanly")
+
+    units = split_units(source_text)
+    verify_round_trip(units, source_bytes, source_text)
+
+    unit_files = {
+        unit.filename: render_unit_file(unit, version, commit, source_url)
+        for unit in units
+    }
+    manifest_text = render_manifest(units, version, commit, source_url, captured)
+
+    wrote = write_outputs(units, unit_files, manifest_text)
+    return units, wrote
+
+
+def main(argv=None):
+    args = parse_args(argv)
+
+    if not _SHA_RE.match(args.commit):
+        print(
+            f"capture: --commit must be a 40-hex-character SHA, got {args.commit!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    captured = datetime.date.today().isoformat()
+    try:
+        units, wrote = capture(args.commit, args.version, args.source_url, captured)
+    except CaptureError as exc:
+        print(f"capture: {exc}", file=sys.stderr)
+        return 1
+
+    status = "wrote" if wrote else "unchanged (idempotent)"
+    print(
+        f"capture: {status} {len(units)} units + manifest for version "
+        f"{args.version} @ {args.commit[:12]}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
